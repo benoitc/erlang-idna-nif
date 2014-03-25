@@ -2,7 +2,6 @@
 
 -export([to_ascii/1, to_unicode/1]).
 
-
 to_ascii(Label) ->
     Labels = re:split(Label, <<"\\.">>, [{return, binary}]),
     io:format("laveks ~p", [Labels]),

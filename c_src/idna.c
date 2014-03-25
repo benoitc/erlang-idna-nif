@@ -24,7 +24,6 @@ Copyright (c) 2014 Benoit Chesneau
 #include "unicode/putil.h"
 
 
-static ERL_NIF_TERM ATOM_OK;
 static ERL_NIF_TERM ATOM_ERROR;
 
 typedef struct {
@@ -47,7 +46,6 @@ typedef int32_t
 
 
 static ERL_NIF_TERM make_atom(ErlNifEnv* env, const char* name);
-static ERL_NIF_TERM make_ok(ErlNifEnv* env, ERL_NIF_TERM value);
 static ERL_NIF_TERM make_error(ErlNifEnv* env, const char* error);
 static ERL_NIF_TERM to_ascii(ErlNifEnv *, int, const ERL_NIF_TERM []);
 static ERL_NIF_TERM to_unicode(ErlNifEnv *, int, const ERL_NIF_TERM []);
@@ -95,12 +93,6 @@ make_atom(ErlNifEnv* env, const char* name)
         return ret;
     }
     return enif_make_atom(env, name);
-}
-
-ERL_NIF_TERM
-make_ok(ErlNifEnv* env, ERL_NIF_TERM value)
-{
-    return enif_make_tuple2(env, ATOM_OK, value);
 }
 
 ERL_NIF_TERM
@@ -183,7 +175,7 @@ idna_binary(priv_data_t* pData, ctx_t* ctx, ERL_NIF_TERM term, IDNAFunc func) {
     }
 
     /* convert binary to uchar */
-    u_charsToUChars((const char *)bin.data, src, (uint32_t)bin.size);
+    u_charsToUChars((const char *)bin.data, src, (uint32_t)bin.size +1);
     srcLen = u_strlen(src);
 
     /* grab a UIDNA instance */
@@ -199,7 +191,7 @@ idna_binary(priv_data_t* pData, ctx_t* ctx, ERL_NIF_TERM term, IDNAFunc func) {
     if (U_SUCCESS(status) && info.errors == 0) {
         enif_alloc_binary(destLen, &to);
         u_UCharsToChars(dest, (char *)to.data, destLen);
-        return make_ok(ctx->env, enif_make_binary(ctx->env, &to));
+        return enif_make_binary(ctx->env, &to);
     }
 
     return make_error(ctx->env, "noidna");
