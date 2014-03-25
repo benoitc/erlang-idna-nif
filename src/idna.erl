@@ -4,7 +4,6 @@
 
 to_ascii(Label) ->
     Labels = re:split(Label, <<"\\.">>, [{return, binary}]),
-    io:format("laveks ~p", [Labels]),
     to_ascii(Labels, <<>>).
 
 to_unicode(Label) ->

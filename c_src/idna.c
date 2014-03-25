@@ -14,6 +14,7 @@ Copyright (c) 2014 Benoit Chesneau
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include <assert.h>
 
 #include "erl_nif.h"
@@ -44,9 +45,6 @@ typedef int32_t
         UChar *dest, int32_t destCapacity,
         UIDNAInfo *pInfo, UErrorCode *status);
 
-
-static ERL_NIF_TERM make_atom(ErlNifEnv* env, const char* name);
-static ERL_NIF_TERM make_error(ErlNifEnv* env, const char* error);
 static ERL_NIF_TERM to_ascii(ErlNifEnv *, int, const ERL_NIF_TERM []);
 static ERL_NIF_TERM to_unicode(ErlNifEnv *, int, const ERL_NIF_TERM []);
 static ERL_NIF_TERM idna_binary(priv_data_t* pData, ctx_t* ctx,
@@ -82,25 +80,6 @@ release_uts46(priv_data_t* pData, ctx_t *ctx)
         enif_mutex_unlock(pData->uts46Mutex);
     }
 }
-
-/* util functions */
-
-ERL_NIF_TERM
-make_atom(ErlNifEnv* env, const char* name)
-{
-    ERL_NIF_TERM ret;
-    if(enif_make_existing_atom(env, name, &ret, ERL_NIF_LATIN1)) {
-        return ret;
-    }
-    return enif_make_atom(env, name);
-}
-
-ERL_NIF_TERM
-make_error(ErlNifEnv* env, const char* error)
-{
-    return enif_make_tuple2(env, ATOM_ERROR, make_atom(env, error));
-}
-
 
 /* main functions */
 
@@ -150,52 +129,56 @@ to_unicode(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
     pData = (priv_data_t*) enif_priv_data(env);
 
     result = idna_binary(pData, &ctx, term, func);
-
     release_uts46(pData, &ctx);
 
     /* return the result */
     return result;
 }
 
-
+#define TO_ULEN(X) ((X) / sizeof(UChar))
+#define FROM_ULEN(X) ((X) * sizeof(UChar))
 
 ERL_NIF_TERM
 idna_binary(priv_data_t* pData, ctx_t* ctx, ERL_NIF_TERM term, IDNAFunc func) {
-    ErlNifBinary bin, to;
-    UChar src[1000];
-    UChar* dest =  malloc(sizeof(UChar) * 64);
-    int32_t oLen = u_strlen(dest);
-    int32_t destLen = 0;
-    int32_t srcLen = 0;
+    ErlNifBinary in, dest;
+    int32_t destLen;
     UErrorCode status;
     UIDNAInfo info = UIDNA_INFO_INITIALIZER;
 
-    if(!enif_inspect_binary(ctx->env, term, &bin)) {
+    if(!enif_inspect_binary(ctx->env, term, &in)) {
         return enif_make_badarg(ctx->env);
     }
 
-    /* convert binary to uchar */
-    u_charsToUChars((const char *)bin.data, src, (uint32_t)bin.size +1);
-    srcLen = u_strlen(src);
-
-    /* grab a UIDNA instance */
     reserve_uts46(pData, ctx);
+    destLen = in.size;
 
     do {
-        dest = realloc(dest, (sizeof(UChar *) * (oLen + destLen)));
-        status = U_ZERO_ERROR;
-        destLen =  func(ctx->uts46, src, srcLen, dest, destLen, &info,
-                &status);
+        if (!enif_alloc_binary(destLen, &dest)) {
+            status = U_MEMORY_ALLOCATION_ERROR;
+        } else {
+            status = U_ZERO_ERROR;
+            destLen =  func(ctx->uts46, (UChar *)in.data, (int32_t) TO_ULEN(in.size),
+                    (UChar *)dest.data, destLen,  &info, &status);
+        }
     } while ((status == U_BUFFER_OVERFLOW_ERROR && info.errors == 0));
 
     if (U_SUCCESS(status) && info.errors == 0) {
-        enif_alloc_binary(destLen, &to);
-        u_UCharsToChars(dest, (char *)to.data, destLen);
-        return enif_make_binary(ctx->env, &to);
+        destLen --;
+
+        if (destLen != (int32_t) dest.size) {
+            /* shrink binary if it was too large */
+            enif_realloc_binary(&dest, destLen);
+        }
+
+        return enif_make_binary(ctx->env, &dest);
     }
 
-    return make_error(ctx->env, "noidna");
+    /* error, release the binary */
+    enif_release_binary(&dest);
+
+    return term;
 }
+
 
 /* ------------------------------------------------------------------------
  * nif module declarations
@@ -255,7 +238,6 @@ on_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM info)
         }
     }
 
-    ATOM_OK = enif_make_atom(env, "ok");
     ATOM_ERROR = enif_make_atom(env, "error");
 
     *priv_data = pData;
