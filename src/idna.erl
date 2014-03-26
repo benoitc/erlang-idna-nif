@@ -1,13 +1,14 @@
+%% -*- coding: utf-8 -*-
 -module(idna).
 
 -export([to_ascii/1, to_unicode/1]).
 
 to_ascii(Label) ->
-    Labels = re:split(Label, <<"\\.">>, [{return, binary}]),
+    Labels = binary:split(Label, <<".">>, [global]),
     to_ascii(Labels, <<>>).
 
 to_unicode(Label) ->
-    Labels = re:split(Label, <<"\\.">>, [{return, binary}]),
+    Labels = binary:split(Label, <<".">>, [global]),
     to_unicode(Labels, <<>>).
 
 
@@ -17,7 +18,7 @@ to_ascii([Label|Labels], <<>>) ->
     to_ascii(Labels, idna_nif:to_ascii_nif(Label));
 to_ascii([Label|Labels], Acc) ->
     Label1 = idna_nif:to_ascii_nif(Label),
-    to_ascii(Labels, << Acc/binary, ".", Label1/binary >>).
+    to_ascii(Labels, << Acc/binary, "\.", Label1/binary >>).
 
 to_unicode([], Acc) ->
     Acc;

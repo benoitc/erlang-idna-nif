@@ -1,3 +1,5 @@
+%% -*- coding: utf-8 -*-
+
 -module(idna_nif).
 
 -export([init/0]).

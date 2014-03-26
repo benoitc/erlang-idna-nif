@@ -41,9 +41,10 @@ typedef struct {
 } priv_data_t;
 
 typedef int32_t
-(U_EXPORT2 *IDNAFunc) (const UIDNA *idna, const UChar *src, int32_t srcLength,
-        UChar *dest, int32_t destCapacity,
+(U_EXPORT2 *IDNAFunc) (const UIDNA *idna, const char *src, int32_t srcLength,
+        char *dest, int32_t destCapacity,
         UIDNAInfo *pInfo, UErrorCode *status);
+
 
 static ERL_NIF_TERM to_ascii(ErlNifEnv *, int, const ERL_NIF_TERM []);
 static ERL_NIF_TERM to_unicode(ErlNifEnv *, int, const ERL_NIF_TERM []);
@@ -91,7 +92,7 @@ to_ascii(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
     ERL_NIF_TERM result;
     ctx_t ctx;
     priv_data_t* pData;
-    IDNAFunc func = uidna_labelToASCII;
+    IDNAFunc func = uidna_labelToASCII_UTF8;
 
     if(argc != 1) {
         return enif_make_badarg(env);
@@ -114,11 +115,10 @@ to_ascii(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
 static ERL_NIF_TERM
 to_unicode(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
     ERL_NIF_TERM term = argv[0];
-
-    int result;
+    ERL_NIF_TERM result;
     ctx_t ctx;
     priv_data_t* pData;
-    IDNAFunc func = uidna_labelToUnicode;
+    IDNAFunc func = uidna_labelToUnicodeUTF8;
 
     if(argc != 1) {
         return enif_make_badarg(env);
@@ -128,7 +128,10 @@ to_unicode(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
     ctx.uts46 = NULL;
     pData = (priv_data_t*) enif_priv_data(env);
 
+    /* convert to unicode */
     result = idna_binary(pData, &ctx, term, func);
+
+    /* release the uts46 instance */
     release_uts46(pData, &ctx);
 
     /* return the result */
@@ -149,23 +152,24 @@ idna_binary(priv_data_t* pData, ctx_t* ctx, ERL_NIF_TERM term, IDNAFunc func) {
         return enif_make_badarg(ctx->env);
     }
 
-    reserve_uts46(pData, ctx);
     destLen = in.size;
+
+    reserve_uts46(pData, ctx);
 
     do {
         if (!enif_alloc_binary(destLen, &dest)) {
             status = U_MEMORY_ALLOCATION_ERROR;
         } else {
             status = U_ZERO_ERROR;
-            destLen =  func(ctx->uts46, (UChar *)in.data, (int32_t) TO_ULEN(in.size),
-                    (UChar *)dest.data, destLen,  &info, &status);
+            destLen =  func(ctx->uts46, (const char *)in.data,
+                    (int32_t)in.size,
+                    (char *)dest.data, destLen, &info, &status);
         }
     } while ((status == U_BUFFER_OVERFLOW_ERROR && info.errors == 0));
 
     if (U_SUCCESS(status) && info.errors == 0) {
-        destLen --;
 
-        if (destLen != (int32_t) dest.size) {
+        if (destLen != dest.size) {
             /* shrink binary if it was too large */
             enif_realloc_binary(&dest, destLen);
         }
